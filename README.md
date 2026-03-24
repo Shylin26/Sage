@@ -75,6 +75,3 @@ python3 run_briefing.py
 | GET | `/api/signals/today` | Today's ranked signals |
 | GET | `/api/health` | Health check |
 
-## Built by
-
-Parisha Chauhan — B.Tech student, Himachal Pradesh
