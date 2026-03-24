@@ -239,8 +239,13 @@ func main() {
 	r := gin.Default()
 	setupRoutes(r)
 
-	log.Println(" SAGE server running → http://localhost:8000")
-	if err := r.Run(":8000"); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
+	
+	log.Printf(" SAGE server running → http://localhost:%s", port)
+	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
