@@ -4,13 +4,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     git \
     curl \
+    golang-go \
     && rm -rf /var/lib/apt/lists/*
-
-RUN curl -OL https://go.dev/dl/go1.22.0.linux-arm64.tar.gz \
-    && tar -C /usr/local -xzf go1.22.0.linux-arm64.tar.gz \
-    && rm go1.22.0.linux-arm64.tar.gz
-
-ENV PATH=$PATH:/usr/local/go/bin
 
 WORKDIR /app
 COPY requirements.txt .
