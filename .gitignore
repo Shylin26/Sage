@@ -1,0 +1,12 @@
+venv/
+.env
+token.json
+data/credentials.json
+data/sage.db
+data/briefing.mp3
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+server/sage-server
