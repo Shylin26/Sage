@@ -19,7 +19,7 @@ settings = get_settings()
 async def collect_signals() -> list[RawSignal]:
     signals = []
 
-    print("  [1/2] Fetching weather...")
+    print("  [1/3] Fetching weather...")
     try:
         weather   = WeatherModule()
         w_signals = await weather.fetch_signals()
@@ -28,7 +28,7 @@ async def collect_signals() -> list[RawSignal]:
     except Exception as e:
         print(f"        ✗ Weather failed: {e}")
 
-    print("  [2/2] Fetching Gmail...")
+    print("  [2/3] Fetching Gmail...")
     try:
         from modules.gmail_reader import GmailReader
         gmail     = GmailReader()
@@ -37,6 +37,16 @@ async def collect_signals() -> list[RawSignal]:
         print(f"        ✓ {len(g_signals)} Gmail signals")
     except Exception as e:
         print(f"        ✗ Gmail failed: {e}")
+
+    print("  [3/3] Fetching Calendar...")
+    try:
+        from modules.calendar_reader import CalendarReader
+        calendar  = CalendarReader()
+        c_signals = await calendar.fetch_signals()
+        signals.extend(c_signals)
+        print(f"        ✓ {len(c_signals)} Calendar signals")
+    except Exception as e:
+        print(f"        ✗ Calendar failed: {e}")
 
     return signals
 

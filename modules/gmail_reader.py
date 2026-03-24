@@ -15,7 +15,10 @@ from config import get_settings
 
 settings = get_settings()
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly"
+]
 
 SENDER_WEIGHT = {
     "faculty":    1.0,
