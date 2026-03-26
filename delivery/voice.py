@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import asyncio
 from pathlib import Path
 from elevenlabs.client import ElevenLabs
-from elevenlabs import save
+from elevenlabs import save, VoiceSettings
 from config import get_settings
 
 settings = get_settings()
@@ -40,12 +40,12 @@ def generate_voice(briefing: dict, output_path: str = "data/briefing.mp3") -> bo
             voice_id  = VOICE_ID,
             text      = script,
             model_id  = "eleven_turbo_v2",
-            voice_settings = {
-                "stability":        0.4,
-                "similarity_boost": 0.8,
-                "style":            0.2,
-                "use_speaker_boost": True,
-            }
+            voice_settings = VoiceSettings(
+                stability        = 0.4,
+                similarity_boost = 0.8,
+                style            = 0.2,
+                use_speaker_boost= True,
+            )
         )
 
         save(audio, output_path)

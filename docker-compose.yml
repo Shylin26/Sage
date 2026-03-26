@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  sage:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persist the database and audio file across container restarts
+      # LEARN: Containers are stateless by default — if you restart one,
+      # all files inside are gone. Volumes mount a folder from your host
+      # machine into the container so data survives restarts.
+      - ./data:/app/data
+    restart: unless-stopped

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAGE | Daily Briefing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="container">
+
+        <!-- Loading State -->
+        <div id="loading" class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading latest briefing...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="empty-state hidden">
+            <h1 class="logo">SAGE</h1>
+            <p>No briefing generated yet.</p>
+            <button class="run-btn primary" onclick="runPipeline()">
+                <span class="btn-text">Generate Briefing</span>
+            </button>
+            <div id="empty-status" class="meta-status"></div>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboard" class="dashboard hidden">
+            <header class="header">
+                <div>
+                    <h1 class="logo">SAGE Briefing</h1>
+                    <div class="meta-info">
+                        <span id="date" class="date">&nbsp;</span>
+                        <span class="dot">•</span>
+                        <span id="signal_count" class="signals">0 signals processed</span>
+                    </div>
+                </div>
+                <button class="run-btn minimal" onclick="runPipeline()" id="run-btn">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                        <path d="M21 2v6h-6"></path>
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    </svg>
+                    Refresh
+                </button>
+            </header>
+
+            <!-- System Status Bar -->
+            <div id="status-bar" class="status-bar hidden">
+                <span class="status-label">Last run:</span>
+                <span id="status-time"></span>
+                <span id="status-modules"></span>
+            </div>
+
+            <main>
+                <div id="hook" class="hook fade-in"></div>
+
+                <div class="grid-layout">
+                    <!-- Left Column -->
+                    <div class="left-col">
+                        <section class="card fade-in" style="animation-delay: 0.1s">
+                            <h2>Situation Report</h2>
+                            <p id="situation"></p>
+                        </section>
+
+                        <section class="card financial fade-in" style="animation-delay: 0.2s">
+                            <h2>Financial Pulse</h2>
+                            <p id="financial"></p>
+                        </section>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div class="right-col">
+                        <section class="card fade-in" style="animation-delay: 0.15s">
+                            <h2>Action Items</h2>
+                            <ul id="actions" class="actions-list"></ul>
+                        </section>
+
+                        <section class="card fade-in" style="animation-delay: 0.2s">
+                            <h2>My Tasks</h2>
+                            <form class="task-form" onsubmit="addTask(event)">
+                                <input id="task-title" type="text" placeholder="Add a task..." required />
+                                <input id="task-due" type="date" />
+                                <select id="task-priority">
+                                    <option value="high">High</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="low">Low</option>
+                                </select>
+                                <input id="task-subject" type="text" placeholder="Subject (optional)" />
+                                <button type="submit">Add</button>
+                            </form>
+                            <ul id="tasks-list" class="tasks-list"></ul>
+                        </section>
+                    </div>
+                </div>
+
+                <footer class="footer fade-in" style="animation-delay: 0.3s">
+                    <p id="close" class="closing-thought"></p>
+
+                    <div class="audio-player hidden" id="audio-section">
+                        <audio id="briefing-audio" src="/api/briefing/audio" preload="none"></audio>
+                        <button class="audio-btn" id="audio-btn" onclick="toggleAudio()">
+                            <svg id="play-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                <polygon points="5,3 19,12 5,21" />
+                            </svg>
+                            <svg id="pause-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"
+                                class="hidden">
+                                <rect x="6" y="4" width="4" height="16" />
+                                <rect x="14" y="4" width="4" height="16" />
+                            </svg>
+                            <span id="audio-label">Listen to Briefing</span>
+                        </button>
+                    </div>
+
+                    <div id="status" class="meta-status"></div>
+                </footer>
+
+                <!-- Raw Signals collapsible -->
+                <section class="signals-section fade-in" style="animation-delay:0.4s">
+                    <button class="signals-toggle" onclick="toggleSignals()">
+                        <span>Raw Signals</span>
+                        <span id="signals-count" class="signals-badge">0</span>
+                        <svg id="signals-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor"
+                            stroke-width="2" fill="none">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                    <div id="signals-list" class="signals-list hidden"></div>
+                </section>
+            </main>
+        </div>
+
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

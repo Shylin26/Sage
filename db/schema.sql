@@ -26,3 +26,21 @@ CREATE TABLE IF NOT EXISTS signal_feedback (
     ignored     INTEGER DEFAULT 0,
     date        TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ran_at       TEXT NOT NULL,
+    duration_sec REAL DEFAULT 0,
+    status       TEXT DEFAULT 'ok',
+    modules      TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    due_date    TEXT,              -- ISO date: 2026-03-28
+    subject     TEXT DEFAULT '',  -- e.g. "Theory of Computation"
+    priority    TEXT DEFAULT 'medium',  -- low / medium / high
+    done        INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now'))
+);

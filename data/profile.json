@@ -1,0 +1,44 @@
+{
+  "name": "Parisha",
+  "role": "B.Tech CS Student at NIT Hamirpur",
+  "tone": "Sarcastic, highly analytical, slightly cynical but deeply supportive. Speak directly to her by name.",
+  "goals": [
+    "Ace the upcoming exams",
+    "Secure a top internship",
+    "Maintain the Duolingo streak"
+  ],
+  "location": "Hamirpur, Himachal Pradesh",
+  "group": "G1",
+  "class_schedule": {
+    "monday": [
+      "9:00-10:00 - Microprocessor and Interfacing (CS-221)",
+      "10:00-11:00 - Simulation (CS-241) + Theory of Computation (CS-224 theory slot)",
+      "11:00-12:00 - Theory of Computation (CS-224)",
+      "12:00-13:00 - Operating System (CS-222)",
+      "14:00-15:00 - Computer Organisation and Architecture (CS-223)",
+      "15:00-17:00 - Microprocessor Lab (CS-225, G1)"
+    ],
+    "tuesday": [
+      "9:00-10:00 - Microprocessor and Interfacing (CS-221)",
+      "10:00-11:00 - Simulation (CS-241) + CS-243",
+      "11:00-12:00 - Theory of Computation (CS-224)",
+      "12:00-13:00 - Operating System (CS-222)",
+      "15:00-17:00 - Operating System Lab (CS-226, G1)"
+    ],
+    "wednesday": [
+      "10:00-11:00 - Simulation (CS-241) + CS-243",
+      "11:00-13:00 - COA Lab (CS-227, G1)",
+      "14:00-15:00 - Computer Organisation and Architecture (CS-223)",
+      "15:00-16:00 - Theory of Computation (CS-224)"
+    ],
+    "thursday": [
+      "9:00-10:00 - Microprocessor and Interfacing (CS-221)",
+      "10:00-11:00 - Operating System (CS-222)",
+      "14:00-15:00 - Computer Organisation and Architecture (CS-223)",
+      "15:00-16:00 - Theory of Computation (CS-224)"
+    ],
+    "friday": [],
+    "saturday": [],
+    "sunday": []
+  }
+}

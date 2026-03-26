@@ -12,3 +12,4 @@ aiosqlite==0.20.0
 pydantic==2.7.1
 pydantic-settings==2.3.0
 elevenlabs>=1.2.2
+twilio>=9.0.0

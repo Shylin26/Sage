@@ -1,7 +1,9 @@
 venv/
+.venv/
 .env
 token.json
 data/credentials.json
+data/token.json
 data/sage.db
 data/briefing.mp3
 __pycache__/

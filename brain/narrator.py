@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from groq import Groq
 from models.signals import ScoredSignal, SignalSource
 from config import get_settings
@@ -12,33 +12,85 @@ from config import get_settings
 settings = get_settings()
 client   = Groq(api_key=settings.groq_api_key)
 
-SECTION_PROMPTS = {
-    "hook": """
-You are SAGE, a razor-sharp personal AI briefing agent for a B.Tech student.
-Write a 1-sentence morning hook — punchy, specific, no generic fluff.
+
+def load_profile() -> dict:
+    profile_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data/profile.json")
+    try:
+        with open(profile_path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {"name": "User", "role": "Student", "tone": "sharp and direct", "goals": []}
+
+
+def build_persona() -> str:
+    """
+    LEARN: We call this fresh every time generate_briefing() runs,
+    not once at import time. That way the day/schedule is always correct.
+
+    Since the briefing runs at 6 PM, we show TOMORROW's schedule —
+    that's what Parisha actually needs to prepare for tonight.
+    """
+    p = load_profile()
+
+    persona  = f"You are SAGE, a personal AI briefing agent for {p['name']}, a {p['role']}."
+    persona += f" Tone: {p['tone']}."
+    persona += f" Her goals: {', '.join(p['goals'])}."
+
+    if p.get("location"):
+        persona += f" She is based in {p['location']}."
+
+    schedule = p.get("class_schedule", {})
+    if schedule:
+        # Briefing is at 6 PM — show tomorrow's classes so she can prepare tonight
+        tomorrow     = datetime.now(timezone.utc) + timedelta(days=1)
+        tomorrow_key = tomorrow.strftime("%A").lower()
+        classes      = schedule.get(tomorrow_key, [])
+
+        if classes:
+            persona += f" Tomorrow ({tomorrow.strftime('%A')}) she has: {', '.join(classes)}."
+        else:
+            persona += f" Tomorrow ({tomorrow.strftime('%A')}) she has no classes — free day."
+
+    return persona
+
+
+def build_prompts(persona: str) -> dict:
+    """Build section prompts fresh with the current persona."""
+    return {
+        "hook": f"""
+{persona}
+Write a 1-sentence evening hook — punchy, specific, no generic fluff.
 It must reference the single most critical signal from today.
-Never say 'Good morning'. Never use emojis.
+Never say 'Good morning' or 'Good evening'. Never use emojis.
 """,
-    "situation": """
-You are SAGE. Write a 3-4 sentence situation report covering the top signals.
+        "situation": f"""
+{persona}
+Write a 3-4 sentence situation report covering the top signals.
 Be direct and specific — name the subjects, amounts, deadlines.
+If there are classes tomorrow, mention the most demanding one.
 Prioritize by urgency. No filler words.
 """,
-    "actions": """
-You are SAGE. Write 3-5 concrete action items the student must do today.
+        "actions": f"""
+{persona}
+Write 3-5 concrete action items she must do tonight or tomorrow morning.
 Format: each action on its own line starting with a verb.
 Be specific — not 'check email' but 'Reply to Prof Sharma's ML assignment email'.
+If she has a lab tomorrow, include a prep action for it.
 """,
-    "financial": """
-You are SAGE. Write a 2-sentence financial pulse.
+        "financial": f"""
+{persona}
+Write a 2-sentence financial pulse.
 Mention any transactions, balances, or anomalies detected.
 If no financial signals, write: 'No financial alerts today.'
 """,
-    "close": """
-You are SAGE. Write one closing sentence — motivating but not cringe.
-Grounded, real, specific to what the student is facing today.
+        "close": f"""
+{persona}
+Write one closing sentence — motivating but not cringe, aligned with her goals.
+Grounded, real, specific to what she is facing today or tomorrow.
+Address her by name.
 """,
-}
+    }
+
 
 def build_signal_context(signals: list[ScoredSignal]) -> str:
     lines = []
@@ -49,6 +101,7 @@ def build_signal_context(signals: list[ScoredSignal]) -> str:
         urr     = s.urr_score
         lines.append(f"[{source.upper()} | URR={urr:.2f}] {subject}\n{s.raw.content[:300]}")
     return "\n\n".join(lines)
+
 
 def call_groq(system_prompt: str, context: str, max_tokens: int = 200) -> str:
     response = client.chat.completions.create(
@@ -61,29 +114,35 @@ def call_groq(system_prompt: str, context: str, max_tokens: int = 200) -> str:
     )
     return response.choices[0].message.content.strip()
 
+
 async def generate_briefing(signals: list[ScoredSignal]) -> dict:
+    # Build persona and prompts fresh at call time — not at import time
+    persona  = build_persona()
+    prompts  = build_prompts(persona)
     context  = build_signal_context(signals)
     date_str = datetime.now(timezone.utc).strftime("%A, %d %B %Y")
 
-    loop     = asyncio.get_event_loop()
+    loop = asyncio.get_event_loop()
 
-    hook      = await loop.run_in_executor(None, call_groq, SECTION_PROMPTS["hook"],      context, 80)
-    situation = await loop.run_in_executor(None, call_groq, SECTION_PROMPTS["situation"], context, 200)
-    actions   = await loop.run_in_executor(None, call_groq, SECTION_PROMPTS["actions"],   context, 200)
-    financial = await loop.run_in_executor(None, call_groq, SECTION_PROMPTS["financial"], context, 100)
-    close     = await loop.run_in_executor(None, call_groq, SECTION_PROMPTS["close"],     context, 80)
+    # Run all 5 Groq calls concurrently — faster than sequential
+    hook, situation, actions, financial, close = await asyncio.gather(
+        loop.run_in_executor(None, call_groq, prompts["hook"],      context, 80),
+        loop.run_in_executor(None, call_groq, prompts["situation"], context, 200),
+        loop.run_in_executor(None, call_groq, prompts["actions"],   context, 200),
+        loop.run_in_executor(None, call_groq, prompts["financial"], context, 100),
+        loop.run_in_executor(None, call_groq, prompts["close"],     context, 80),
+    )
 
-    briefing = {
-        "date":      date_str,
-        "hook":      hook,
-        "situation": situation,
-        "actions":   actions,
-        "financial": financial,
-        "close":     close,
+    return {
+        "date":         date_str,
+        "hook":         hook,
+        "situation":    situation,
+        "actions":      actions,
+        "financial":    financial,
+        "close":        close,
         "signal_count": len(signals),
     }
 
-    return briefing
 
 def format_briefing(b: dict) -> str:
     divider = "─" * 52
@@ -116,7 +175,7 @@ async def test():
     mock_signals_raw = [
         RawSignal(
             source      = SignalSource.ACADEMIC,
-            content     = "Your interview with Razorpay is confirmed for tomorrow at 10am. Please join the Google Meet link.",
+            content     = "Your interview with Razorpay is confirmed for tomorrow at 10am.",
             metadata    = {"urgency_score": 1.0, "sender_weight": 0.85,
                            "sender_category": "internship", "subject": "Interview Confirmed — Razorpay"},
             received_at = datetime.now(timezone.utc) - timedelta(minutes=30),
@@ -124,7 +183,7 @@ async def test():
         ),
         RawSignal(
             source      = SignalSource.GMAIL,
-            content     = "The ML assignment submission portal closes tomorrow at 11:59pm. Late submissions will not be accepted.",
+            content     = "The ML assignment submission portal closes tomorrow at 11:59pm.",
             metadata    = {"urgency_score": 0.8, "sender_weight": 1.0,
                            "sender_category": "faculty", "subject": "ML Assignment Due Tomorrow — Prof Sharma"},
             received_at = datetime.now(timezone.utc) - timedelta(hours=1),
@@ -140,9 +199,9 @@ async def test():
         ),
         RawSignal(
             source      = SignalSource.WEATHER,
-            content     = "Heavy rain expected in Shimla. Commute risk: high. Bring umbrella.",
+            content     = "Heavy rain expected in Hamirpur. Commute risk: high. Bring umbrella.",
             metadata    = {"urgency_score": 0.75, "sender_weight": 0.7,
-                           "sender_category": "weather", "subject": "Heavy Rain Alert"},
+                           "sender_category": "weather", "subject": "Heavy Rain Alert — Hamirpur"},
             received_at = datetime.now(timezone.utc) - timedelta(minutes=15),
             signal_id   = "mock_4",
         ),
@@ -159,6 +218,3 @@ async def test():
 
 if __name__ == "__main__":
     asyncio.run(test())
-
-
-

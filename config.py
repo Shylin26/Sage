@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     twilio_whatsapp_from:   str = ""
     elevenlabs_api_key:     str = ""
     your_whatsapp_number:   str = ""
-    lat:                    float = 31.1048
-    lon:                    float = 77.1734
-    city:                   str = "Shimla"
+    lat:                    float = 31.6862
+    lon:                    float = 76.5212
+    city:                   str = "Hamirpur"
     db_path:                str = "data/sage.db"
 
     class Config:
