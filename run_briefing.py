@@ -178,15 +178,24 @@ async def save_pipeline_run(health: dict, duration: float, signal_count: int):
     print(f"  ✓ Run recorded — status: {status} ({duration:.1f}s)")
 
 
-async def save_briefing(briefing: dict, signal_ids: list):
+async def save_briefing(briefing: dict, signal_ids: list, audio_path: str = ""):
     date_str = datetime.now(timezone.utc).date().isoformat()
+    
+    # Read MP3 and store as base64 in DB so it survives container restarts
+    audio_b64 = ""
+    if audio_path and os.path.exists(audio_path):
+        import base64
+        with open(audio_path, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        print(f"  ✓ Audio stored in DB ({len(audio_b64)//1024} KB)")
+
     async with aiosqlite.connect(settings.db_path) as db:
         await db.execute(
             """
-            INSERT OR REPLACE INTO briefings (date, narrative, signals_used, delivered)
-            VALUES (?, ?, ?, 0)
+            INSERT OR REPLACE INTO briefings (date, narrative, signals_used, delivered, audio_b64)
+            VALUES (?, ?, ?, 0, ?)
             """,
-            (date_str, json.dumps(briefing), json.dumps(signal_ids))
+            (date_str, json.dumps(briefing), json.dumps(signal_ids), audio_b64)
         )
         await db.commit()
     print(f"  ✓ Briefing saved to DB for {date_str}")
@@ -246,18 +255,20 @@ async def run():
     briefing  = await generate_briefing(filtered)
     formatted = format_briefing(briefing)
 
-    signal_ids = [s.raw.signal_id for s in filtered if s.raw.signal_id]
-    await save_signals(filtered)
-    await save_briefing(briefing, signal_ids)
-
     print("\n● Generating voice briefing...")
+    audio_path = "data/briefing.mp3"
     try:
         from delivery.voice import generate_voice
-        generate_voice(briefing, output_path="data/briefing.mp3")
+        generate_voice(briefing, output_path=audio_path)
         health["voice"] = "ok"
     except Exception as e:
         health["voice"] = f"failed: {e}"
+        audio_path = ""
         print(f"   Voice failed: {e}")
+
+    signal_ids = [s.raw.signal_id for s in filtered if s.raw.signal_id]
+    await save_signals(filtered)
+    await save_briefing(briefing, signal_ids, audio_path)
 
     print("\n● Sending WhatsApp briefing...")
     try:

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS briefings (
     narrative   TEXT NOT NULL,
     signals_used TEXT DEFAULT '[]',
     delivered   INTEGER DEFAULT 0,
+    audio_b64   TEXT DEFAULT '',
     created_at  TEXT DEFAULT (datetime('now'))
 );
 

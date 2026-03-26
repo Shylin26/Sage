@@ -75,10 +75,31 @@ async def api_run():
 
 @app.get("/api/briefing/audio")
 async def api_audio():
-    path = "data/briefing.mp3"
-    if not os.path.exists(path):
+    # Try file first, fall back to DB
+    # LEARN: We store audio as base64 in SQLite so it survives
+    # container restarts on Railway (no persistent volume needed)
+    import base64
+    from fastapi.responses import Response
+
+    if os.path.exists("data/briefing.mp3"):
+        return FileResponse("data/briefing.mp3", media_type="audio/mpeg")
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT audio_b64 FROM briefings WHERE audio_b64 != '' ORDER BY date DESC LIMIT 1"
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if not row or not row["audio_b64"]:
         raise HTTPException(status_code=404, detail="No audio briefing available yet")
-    return FileResponse(path, media_type="audio/mpeg", filename="briefing.mp3")
+
+    audio_bytes = base64.b64decode(row["audio_b64"])
+    # Also write to file so next request is faster
+    with open("data/briefing.mp3", "wb") as f:
+        f.write(audio_bytes)
+
+    return Response(content=audio_bytes, media_type="audio/mpeg")
 
 
 # ── Signals ────────────────────────────────────────────────────────────────
