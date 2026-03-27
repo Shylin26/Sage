@@ -59,11 +59,44 @@ async def collect_signals() -> tuple[list[RawSignal], dict]:
         health["calendar"] = f"failed: {e}"
         print(f"        ✗ Calendar failed: {e}")
 
-    # Pull pending tasks from DB and convert to signals
-    # LEARN: Tasks with due dates get urgency based on how close the deadline is.
-    # Due today = 0.95, due tomorrow = 0.85, due in 3 days = 0.65, etc.
+    # Exam countdown signals
+    # LEARN: We read exam dates from profile.json and generate urgency signals.
+    # The closer the exam, the higher the urgency score. This is injected
+    # into the pipeline just like any other signal — scorer ranks it naturally.
     print("  [4/5] Loading tasks...")
     try:
+        from datetime import date
+        today_date = datetime.now(timezone.utc).date()
+        profile_path = "data/profile.json"
+        import json as _json
+        with open(profile_path) as f:
+            profile = _json.load(f)
+
+        for exam in profile.get("exams", []):
+            exam_date = date.fromisoformat(exam["date"])
+            days_left = (exam_date - today_date).days
+            if days_left < 0 or days_left > 21:
+                continue  # skip past exams and far future ones
+
+            if days_left <= 3:   urgency = 0.98
+            elif days_left <= 7: urgency = 0.88
+            elif days_left <= 14: urgency = 0.72
+            else:                urgency = 0.55
+
+            signals.append(RawSignal(
+                source    = SignalSource.ACADEMIC,
+                content   = f"Exam in {days_left} days: {exam['subject']} ({exam['code']}) on {exam['date']}.",
+                metadata  = {
+                    "subject":         f"EXAM in {days_left}d: {exam['subject']}",
+                    "urgency_score":   urgency,
+                    "sender_weight":   1.0,
+                    "sender_category": "exam",
+                    "days_left":       days_left,
+                    "exam_date":       exam["date"],
+                },
+                signal_id = f"exam_{exam['code']}_{exam['date']}",
+            ))
+
         from datetime import date, timedelta
         today_date = datetime.now(timezone.utc).date()
         async with aiosqlite.connect(settings.db_path) as db:
@@ -289,3 +322,171 @@ async def run():
 
 if __name__ == "__main__":
     asyncio.run(run())
+
+
+async def run_morning_briefing():
+    """
+    LEARN: Morning briefing is intentionally lightweight.
+    No Groq, no voice, no DB writes — just a quick WhatsApp
+    with today's schedule + weather + nearest exam countdown.
+    Runs at 8 AM IST so Parisha sees it when she wakes up.
+    """
+    print("\n── SAGE Morning Briefing ──")
+    await init_db()
+
+    from datetime import date
+    import json as _json
+
+    today     = datetime.now(timezone.utc).strftime("%A, %d %B")
+    today_key = datetime.now(timezone.utc).strftime("%A").lower()
+
+    # Load profile for schedule
+    try:
+        with open("data/profile.json") as f:
+            profile = _json.load(f)
+    except Exception:
+        profile = {}
+
+    schedule = profile.get("class_schedule", {}).get(today_key, [])
+    exams    = profile.get("exams", [])
+    today_date = datetime.now(timezone.utc).date()
+
+    # Find nearest upcoming exam
+    upcoming = []
+    for ex in exams:
+        d = date.fromisoformat(ex["date"])
+        days = (d - today_date).days
+        if 0 <= days <= 21:
+            upcoming.append((days, ex["subject"], ex["code"]))
+    upcoming.sort()
+
+    # Get weather
+    weather_line = ""
+    try:
+        from modules.weather import WeatherModule
+        impact = await WeatherModule().get_impact()
+        if impact:
+            weather_line = f"🌤 {impact.description.title()}, {impact.temperature_c:.0f}°C. {impact.clothing_advice}."
+    except Exception:
+        pass
+
+    # Build message
+    lines = [f"*SAGE — Good Morning, Parisha* 🌅", f"_{today}_", ""]
+
+    if schedule:
+        lines.append("*Today's Classes*")
+        for c in schedule:
+            lines.append(f"  • {c}")
+        lines.append("")
+    else:
+        lines.append("No classes today — use it well.\n")
+
+    if weather_line:
+        lines.append(weather_line)
+        lines.append("")
+
+    if upcoming:
+        lines.append("*Exam Countdown*")
+        for days, subj, code in upcoming[:3]:
+            emoji = "🔴" if days <= 3 else "🟡" if days <= 7 else "🟢"
+            lines.append(f"  {emoji} {subj} ({code}) — {days} days")
+        lines.append("")
+
+    lines.append("_Make today count._")
+
+    message = "\n".join(lines)
+
+    try:
+        from delivery.whatsapp_sender import send_whatsapp
+        send_whatsapp(message)
+        print("  ✓ Morning briefing sent")
+    except Exception as e:
+        print(f"  ✗ Morning WhatsApp failed: {e}")
+
+
+async def run_weekly_review():
+    """
+    LEARN: Every Sunday at 7 PM IST, SAGE sends a weekly performance
+    summary via WhatsApp. This is called a "digest" pattern — instead
+    of real-time alerts, you batch and summarize a week's worth of data.
+
+    We query the DB for the past 7 days of briefings, signals, and
+    feedback to build a personal performance report.
+    """
+    print("\n── SAGE Weekly Review ──")
+    await init_db()
+
+    from datetime import date, timedelta
+    import json as _json
+
+    today      = datetime.now(timezone.utc).date()
+    week_start = (today - timedelta(days=6)).isoformat()
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Count briefings delivered this week
+        async with db.execute(
+            "SELECT COUNT(*) as cnt FROM briefings WHERE date >= ?", (week_start,)
+        ) as cur:
+            briefing_count = (await cur.fetchone())["cnt"]
+
+        # Count tasks completed this week
+        async with db.execute(
+            "SELECT COUNT(*) as cnt FROM tasks WHERE done = 1 AND created_at >= ?",
+            (week_start,)
+        ) as cur:
+            tasks_done = (await cur.fetchone())["cnt"]
+
+        # Count pending tasks
+        async with db.execute(
+            "SELECT COUNT(*) as cnt FROM tasks WHERE done = 0"
+        ) as cur:
+            tasks_pending = (await cur.fetchone())["cnt"]
+
+        # Count signals acted on this week
+        async with db.execute(
+            "SELECT COUNT(*) as cnt FROM signal_feedback WHERE acted_on = 1 AND date >= ?",
+            (week_start,)
+        ) as cur:
+            acted_on = (await cur.fetchone())["cnt"]
+
+        # Most common signal source this week
+        async with db.execute(
+            """SELECT source, COUNT(*) as cnt FROM signals
+               WHERE received_at >= ? GROUP BY source ORDER BY cnt DESC LIMIT 1""",
+            (week_start,)
+        ) as cur:
+            top_source_row = await cur.fetchone()
+            top_source = top_source_row["source"] if top_source_row else "none"
+
+    # Build WhatsApp message
+    week_label = f"{(today - timedelta(days=6)).strftime('%d %b')} – {today.strftime('%d %b')}"
+    lines = [
+        f"*SAGE Weekly Review* 📊",
+        f"_{week_label}_",
+        "",
+        f"*Briefings delivered:* {briefing_count}/7",
+        f"*Tasks completed:* {tasks_done}",
+        f"*Tasks still pending:* {tasks_pending}",
+        f"*Signals acted on:* {acted_on}",
+        f"*Top signal source:* {top_source}",
+        "",
+    ]
+
+    # Motivational close based on performance
+    if tasks_done >= 5:
+        lines.append("Solid week, Parisha. Keep that momentum.")
+    elif tasks_done >= 2:
+        lines.append("Decent week. Push harder next one.")
+    else:
+        lines.append("Rough week. Reset, refocus, go again.")
+
+    message = "\n".join(lines)
+
+    try:
+        from delivery.whatsapp_sender import send_whatsapp
+        send_whatsapp(message)
+        print("  ✓ Weekly review sent")
+    except Exception as e:
+        print(f"  ✗ Weekly review failed: {e}")

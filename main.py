@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from config import get_settings
 from db.database import init_db
-from run_briefing import run as run_pipeline
+from run_briefing import run as run_pipeline, run_morning_briefing, run_weekly_review
 
 settings  = get_settings()
 scheduler = AsyncIOScheduler()
@@ -26,15 +26,33 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+
+    # Evening full briefing — 6:00 PM IST = 12:30 UTC
     scheduler.add_job(
         run_pipeline,
-        CronTrigger(hour=12, minute=30, timezone="UTC"),  # 6:00 PM IST = 12:30 UTC
+        CronTrigger(hour=12, minute=30, timezone="UTC"),
         id="evening_briefing",
         replace_existing=True,
     )
-    print("SAGE scheduler started — briefing runs at 18:00 IST daily")
+
+    # Morning quick briefing — 8:00 AM IST = 2:30 UTC
+    scheduler.add_job(
+        run_morning_briefing,
+        CronTrigger(hour=2, minute=30, timezone="UTC"),
+        id="morning_briefing",
+        replace_existing=True,
+    )
+
+    # Weekly Sunday review — 7:00 PM IST = 13:30 UTC, Sundays only
+    scheduler.add_job(
+        run_weekly_review,
+        CronTrigger(day_of_week="sun", hour=13, minute=30, timezone="UTC"),
+        id="weekly_review",
+        replace_existing=True,
+    )
+
     scheduler.start()
-    print("SAGE scheduler started — briefing runs at 18:00 daily")
+    print("SAGE scheduler — morning 8AM IST + evening 6PM IST")
     yield
     scheduler.shutdown()
 
@@ -72,6 +90,18 @@ async def api_history():
 async def api_run():
     asyncio.create_task(run_pipeline())
     return {"status": "pipeline started", "time": datetime.now(timezone.utc).isoformat()}
+
+
+@app.post("/api/morning/run")
+async def api_morning():
+    asyncio.create_task(run_morning_briefing())
+    return {"status": "morning briefing started", "time": datetime.now(timezone.utc).isoformat()}
+
+
+@app.post("/api/weekly/run")
+async def api_weekly():
+    asyncio.create_task(run_weekly_review())
+    return {"status": "weekly review started", "time": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/api/briefing/audio")

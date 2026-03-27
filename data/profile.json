@@ -9,6 +9,33 @@
   ],
   "location": "Hamirpur, Himachal Pradesh",
   "group": "G1",
+  "exams": [
+    {
+      "subject": "Microprocessor and Interfacing",
+      "code": "CS-221",
+      "date": "2026-04-27"
+    },
+    {
+      "subject": "Operating Systems",
+      "code": "CS-222",
+      "date": "2026-04-29"
+    },
+    {
+      "subject": "Computer Organisation and Architecture",
+      "code": "CS-223",
+      "date": "2026-05-01"
+    },
+    {
+      "subject": "Theory of Computation",
+      "code": "CS-224",
+      "date": "2026-05-06"
+    },
+    {
+      "subject": "Simulation and Modelling",
+      "code": "CS-241/CS-243",
+      "date": "2026-05-08"
+    }
+  ],
   "class_schedule": {
     "monday": [
       "9:00-10:00 - Microprocessor and Interfacing (CS-221)",
