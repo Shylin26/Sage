@@ -194,9 +194,15 @@ async def api_status():
     }
 
 
-@app.get("/api/exams")
+@app.get("/api/streak")
+async def api_streak(auth=Depends(require_auth)):
+    from brain.memory import get_study_streak
+    return await get_study_streak()
+
+
+# ── Exams ──────────────────────────────────────────────────────────────────
+    @app.get("/api/exams")
 async def api_exams(auth=Depends(require_auth)):
-    """Returns exam countdown data from profile.json"""
     from datetime import date
     try:
         with open("data/profile.json") as f:

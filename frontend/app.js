@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchSignals();
     fetchTasks();
     fetchExams();
+    fetchStreak();
 });
 
 // ── Briefing ──────────────────────────────────────────────────────────────
@@ -164,6 +165,25 @@ function toggleAudio() {
         pauseIcon.classList.add('hidden');
         label.textContent = 'Listen to Briefing';
     };
+}
+
+// ── Streak ────────────────────────────────────────────────────────────────
+
+async function fetchStreak() {
+    try {
+        const r = await fetch('/api/streak');
+        const data = await r.json();
+        if (data.streak_days === 0 && !data.today_done) return;
+
+        const bar = document.getElementById('status-bar');
+        if (!bar) return;
+
+        const fire = data.streak_days >= 7 ? '🔥' : data.streak_days >= 3 ? '⚡' : '✦';
+        const label = document.createElement('span');
+        label.className = 'streak-badge';
+        label.textContent = `${fire} ${data.streak_days}d streak`;
+        bar.appendChild(label);
+    } catch (e) { }
 }
 
 // ── Exam Countdown ────────────────────────────────────────────────────────

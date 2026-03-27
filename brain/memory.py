@@ -4,39 +4,83 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
 import aiosqlite
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from config import get_settings
 
 settings = get_settings()
+
+
+async def get_study_streak() -> dict:
+    """
+    LEARN: Streak algorithm — same logic as Duolingo.
+    We look at each past day and check if at least one task
+    was completed. We count backwards until we find a day
+    with no completions — that's where the streak breaks.
+
+    Returns streak count + whether today has activity yet.
+    """
+    today = datetime.now(timezone.utc).date()
+    streak = 0
+    today_done = 0
+
+    async with aiosqlite.connect(settings.db_path) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Check today's completions
+        async with db.execute(
+            """SELECT COUNT(*) as cnt FROM tasks
+               WHERE done = 1 AND date(created_at) = ?""",
+            (today.isoformat(),)
+        ) as cur:
+            row = await cur.fetchone()
+            today_done = row["cnt"] if row else 0
+
+        # Count consecutive days with completions going backwards
+        check_date = today - timedelta(days=1)
+        for _ in range(30):  # max 30 day lookback
+            async with db.execute(
+                """SELECT COUNT(*) as cnt FROM tasks
+                   WHERE done = 1 AND date(created_at) = ?""",
+                (check_date.isoformat(),)
+            ) as cur:
+                row = await cur.fetchone()
+                if row and row["cnt"] > 0:
+                    streak += 1
+                    check_date -= timedelta(days=1)
+                else:
+                    break
+
+    return {
+        "streak_days": streak,
+        "today_done":  today_done,
+        "is_active":   today_done > 0,
+    }
 
 
 async def get_yesterday_context() -> dict:
     """
     LEARN: This is episodic memory — we retrieve what happened
     yesterday so today's briefing can reference it.
-
-    We pull:
-    - What SAGE said yesterday (the actions it gave)
-    - Which of those actions the user marked as done (feedback)
-    - Whether the briefing was delivered successfully
-
-    This context gets injected into the narrator prompt so SAGE
-    can say "you didn't act on X yesterday" or "good job on Y".
     """
     yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
 
     context = {
-        "had_yesterday": False,
+        "had_yesterday":     False,
         "yesterday_actions": [],
-        "acted_on": [],
-        "ignored": [],
-        "streak_days": 0,
+        "acted_on":          [],
+        "ignored":           [],
+        "streak_days":       0,
+        "today_done":        0,
     }
+
+    # Get streak data
+    streak_data = await get_study_streak()
+    context["streak_days"] = streak_data["streak_days"]
+    context["today_done"]  = streak_data["today_done"]
 
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
 
-        # Get yesterday's briefing
         async with db.execute(
             "SELECT narrative FROM briefings WHERE date = ?", (yesterday,)
         ) as cursor:
@@ -48,86 +92,64 @@ async def get_yesterday_context() -> dict:
         context["had_yesterday"] = True
         narrative = json.loads(row["narrative"])
 
-        # Extract action items from yesterday
-        actions_text = narrative.get("actions", "")
         context["yesterday_actions"] = [
             line.strip().lstrip("-•*→").strip()
-            for line in actions_text.splitlines()
+            for line in narrative.get("actions", "").splitlines()
             if line.strip() and len(line.strip()) > 10
         ]
 
-        # Check which signals were acted on vs ignored via feedback table
         async with db.execute(
-            """
-            SELECT signal_id, acted_on, ignored
-            FROM signal_feedback
-            WHERE date = ?
-            """,
+            "SELECT signal_id, acted_on FROM signal_feedback WHERE date = ?",
             (yesterday,)
         ) as cursor:
-            feedback_rows = await cursor.fetchall()
-
-        for fb in feedback_rows:
-            if fb["acted_on"]:
-                context["acted_on"].append(fb["signal_id"])
-            else:
-                context["ignored"].append(fb["signal_id"])
-
-        # Calculate how many consecutive days briefings have been delivered
-        # LEARN: This is a "streak" calculation — same logic as Duolingo streaks
-        async with db.execute(
-            "SELECT date FROM briefings ORDER BY date DESC LIMIT 30"
-        ) as cursor:
-            dates = [r["date"] async for r in cursor]
-
-        streak = 0
-        check  = datetime.now(timezone.utc).date()
-        for d in dates:
-            if d == (check - timedelta(days=1)).isoformat() or d == check.isoformat():
-                streak += 1
-                check = datetime.fromisoformat(d).date()
-            else:
-                break
-        context["streak_days"] = streak
+            for fb in await cursor.fetchall():
+                if fb["acted_on"]:
+                    context["acted_on"].append(fb["signal_id"])
+                else:
+                    context["ignored"].append(fb["signal_id"])
 
     return context
 
 
 def format_memory_context(ctx: dict) -> str:
     """
-    Converts the memory dict into a natural language string
-    that gets injected into the narrator's system prompt.
+    Converts memory dict into natural language for the narrator prompt.
     """
-    if not ctx["had_yesterday"]:
-        return "This is the first briefing — no prior context available."
+    lines = []
 
-    lines = [f"SAGE has been running for {ctx['streak_days']} consecutive day(s)."]
+    # Streak info — this is what makes SAGE feel alive
+    streak = ctx["streak_days"]
+    if streak >= 7:
+        lines.append(f"Parisha has been completing tasks for {streak} days straight — acknowledge this streak positively.")
+    elif streak >= 3:
+        lines.append(f"Parisha has a {streak}-day task completion streak — mention it briefly.")
+    elif streak == 0 and not ctx["today_done"]:
+        lines.append("Parisha hasn't completed any tasks recently — gently call this out without being harsh.")
+
+    if not ctx["had_yesterday"]:
+        lines.append("This is the first briefing — no prior context.")
+        return "\n".join(lines) if lines else "No prior context."
 
     if ctx["yesterday_actions"]:
-        lines.append(f"Yesterday's action items were:")
-        for a in ctx["yesterday_actions"][:4]:  # top 4 only
+        lines.append("Yesterday's action items were:")
+        for a in ctx["yesterday_actions"][:3]:
             lines.append(f"  - {a}")
 
     if ctx["acted_on"]:
-        lines.append(f"User acted on {len(ctx['acted_on'])} signal(s) yesterday — acknowledge this positively.")
+        lines.append(f"User acted on {len(ctx['acted_on'])} signal(s) — acknowledge positively.")
+    if ctx["ignored"] and not ctx["acted_on"]:
+        lines.append("User didn't act on any signals yesterday — note this if relevant.")
 
-    if ctx["ignored"]:
-        lines.append(f"User ignored {len(ctx['ignored'])} signal(s) yesterday — if relevant, mention they are still pending.")
-
-    if not ctx["acted_on"] and not ctx["ignored"]:
-        lines.append("No feedback was recorded yesterday.")
-
-    return "\n".join(lines)
+    return "\n".join(lines) if lines else "No notable patterns from yesterday."
 
 
-# ── Test ───────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import asyncio
 
     async def test():
+        streak = await get_study_streak()
+        print(f"\nStreak: {streak}")
         ctx = await get_yesterday_context()
-        print("\n── Memory Context ──\n")
-        print(format_memory_context(ctx))
-        print(f"\nRaw: {json.dumps(ctx, indent=2)}")
+        print(f"\nMemory context:\n{format_memory_context(ctx)}")
 
     asyncio.run(test())
