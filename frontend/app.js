@@ -422,6 +422,66 @@ function toggleHistory() {
     chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
 }
 
+// ── Profile Editor ────────────────────────────────────────────────────────
+
+async function openSettings() {
+    const r = await fetch('/api/profile');
+    const profile = await r.json();
+
+    document.getElementById('p-name').value = profile.name || '';
+    document.getElementById('p-role').value = profile.role || '';
+    document.getElementById('p-tone').value = profile.tone || '';
+    document.getElementById('p-goals').value = (profile.goals || []).join('\n');
+    document.getElementById('p-exams').value = (profile.exams || [])
+        .map(e => `${e.subject} | ${e.code} | ${e.date}`)
+        .join('\n');
+
+    document.getElementById('settings-modal').classList.remove('hidden');
+}
+
+function closeSettings(e) {
+    if (!e || e.target.id === 'settings-modal' || e.currentTarget.tagName === 'BUTTON') {
+        document.getElementById('settings-modal').classList.add('hidden');
+    }
+}
+
+async function saveProfile() {
+    const name = document.getElementById('p-name').value.trim();
+    const role = document.getElementById('p-role').value.trim();
+    const tone = document.getElementById('p-tone').value.trim();
+    const goals = document.getElementById('p-goals').value.trim().split('\n').filter(Boolean);
+    const exams = document.getElementById('p-exams').value.trim().split('\n')
+        .filter(Boolean)
+        .map(line => {
+            const [subject, code, date] = line.split('|').map(s => s.trim());
+            return { subject, code, date };
+        })
+        .filter(e => e.subject && e.code && e.date);
+
+    // Fetch current profile to preserve class_schedule and other fields
+    const r = await fetch('/api/profile');
+    const current = await r.json();
+
+    const updated = { ...current, name, role, tone, goals, exams };
+
+    const save = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+    });
+
+    const statusEl = document.getElementById('profile-status');
+    if (save.ok) {
+        statusEl.textContent = '✓ Saved';
+        setTimeout(() => {
+            closeSettings();
+            statusEl.textContent = '';
+        }, 1000);
+    } else {
+        statusEl.textContent = '✗ Save failed';
+    }
+}
+
 // ── Pipeline Trigger ──────────────────────────────────────────────────────
 
 async function runPipeline() {

@@ -200,6 +200,23 @@ async def api_streak(auth=Depends(require_auth)):
     return await get_study_streak()
 
 
+@app.get("/api/profile")
+async def api_get_profile(auth=Depends(require_auth)):
+    try:
+        with open("data/profile.json") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+@app.post("/api/profile")
+async def api_save_profile(request: Request, auth=Depends(require_auth)):
+    data = await request.json()
+    with open("data/profile.json", "w") as f:
+        json.dump(data, f, indent=2)
+    return {"status": "saved"}
+
+
 # ── Exams ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/exams")
