@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -285,6 +285,115 @@ async def api_delete_task(task_id: int, auth=Depends(require_auth)):
         await db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         await db.commit()
     return {"status": "deleted"}
+
+
+# ── WhatsApp Webhook ───────────────────────────────────────────────────────
+# LEARN: Twilio calls this URL every time you send a WhatsApp message
+# to the sandbox number. We parse the message and act on it.
+# No auth needed here — Twilio has its own signature validation.
+
+@app.post("/api/whatsapp/reply")
+async def api_whatsapp_reply(request: Request):
+    from urllib.parse import unquote_plus
+    from delivery.whatsapp_sender import send_whatsapp
+
+    body = await request.body()
+    params = dict(p.split("=") for p in body.decode().split("&") if "=" in p)
+    msg = unquote_plus(params.get("Body", "")).strip().lower()
+
+    response_text = await handle_whatsapp_command(msg)
+    if response_text:
+        send_whatsapp(response_text)
+
+    return {"status": "ok"}
+
+
+async def handle_whatsapp_command(msg: str) -> str:
+    """
+    LEARN: Simple command parser — no ML needed.
+    We check what the message starts with and route accordingly.
+    This is called a "command pattern" — common in bots and CLIs.
+    """
+    from datetime import date
+    import re
+
+    # "done 2" or "done task 2" → mark task #2 complete
+    done_match = re.match(r"done\s+(\d+)", msg)
+    if done_match:
+        task_id = int(done_match.group(1))
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT title FROM tasks WHERE id = ?", (task_id,)) as cur:
+                task = await cur.fetchone()
+            if task:
+                await db.execute("UPDATE tasks SET done = 1 WHERE id = ?", (task_id,))
+                await db.commit()
+                return f"✅ Marked done: {task['title']}"
+            return f"❌ No task with ID {task_id}"
+
+    # "add task: submit COA notes by friday" → create task
+    if msg.startswith("add task:") or msg.startswith("add:"):
+        text = msg.split(":", 1)[1].strip()
+        # Try to extract due date
+        due_date = None
+        today = date.today()
+        if "today" in text:
+            due_date = today.isoformat()
+            text = text.replace("today", "").strip()
+        elif "tomorrow" in text:
+            from datetime import timedelta
+            due_date = (today + timedelta(days=1)).isoformat()
+            text = text.replace("tomorrow", "").strip()
+        else:
+            # Try "by friday", "by monday" etc
+            day_match = re.search(r"by (monday|tuesday|wednesday|thursday|friday|saturday|sunday)", text)
+            if day_match:
+                days = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
+                target = days.index(day_match.group(1))
+                current = today.weekday()
+                delta = (target - current) % 7 or 7
+                from datetime import timedelta
+                due_date = (today + timedelta(days=delta)).isoformat()
+                text = text[:day_match.start()].strip()
+
+        title = text.rstrip(".,").strip().title()
+        async with aiosqlite.connect(settings.db_path) as db:
+            await db.execute(
+                "INSERT INTO tasks (title, due_date, priority) VALUES (?, ?, 'medium')",
+                (title, due_date)
+            )
+            await db.commit()
+        due_str = f" (due {due_date})" if due_date else ""
+        return f"📝 Task added: {title}{due_str}"
+
+    # "status" or "tasks" → list pending tasks
+    if msg in ("status", "tasks", "list", "pending"):
+        async with aiosqlite.connect(settings.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT id, title, due_date FROM tasks WHERE done = 0 ORDER BY due_date ASC LIMIT 10"
+            ) as cur:
+                tasks = await cur.fetchall()
+        if not tasks:
+            return "✅ No pending tasks. You're clear."
+        lines = ["*Pending Tasks*"]
+        for t in tasks:
+            due = f" · {t['due_date']}" if t['due_date'] else ""
+            lines.append(f"  {t['id']}. {t['title']}{due}")
+        lines.append("\nReply *done <number>* to mark complete.")
+        return "\n".join(lines)
+
+    # "help" → show commands
+    if msg == "help":
+        return (
+            "*SAGE Commands*\n"
+            "• *status* — list pending tasks\n"
+            "• *done 2* — mark task 2 complete\n"
+            "• *add task: <title> by <day>* — add a task\n"
+            "• *help* — show this message"
+        )
+
+    return ""  # unknown command — don't reply
 
 
 # ── Bank SMS Webhook ───────────────────────────────────────────────────────
