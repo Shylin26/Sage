@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchTasks();
     fetchExams();
     fetchStreak();
+    fetchHistory();
 });
 
 // ── Briefing ──────────────────────────────────────────────────────────────
@@ -41,6 +42,17 @@ function renderBriefing(data) {
     document.getElementById('situation').innerHTML = data.situation || "";
     document.getElementById('financial').innerHTML = data.financial || "No financial alerts.";
     document.getElementById('close').innerHTML = data.close || "";
+
+    // Show mood badge
+    const existing = document.querySelector('.mood-badge');
+    if (existing) existing.remove();
+    if (data.mood) {
+        const moodEmoji = { stressful: '🔴 stressful', busy: '🟡 busy', calm: '🟢 calm' }[data.mood] || '';
+        const moodEl = document.createElement('span');
+        moodEl.className = 'mood-badge';
+        moodEl.textContent = moodEmoji;
+        document.getElementById('signal_count').insertAdjacentElement('afterend', moodEl);
+    }
 
     // Render action items with feedback buttons
     // LEARN: Each action item gets a signal_id stored as a data attribute.
@@ -369,6 +381,42 @@ async function fetchSignals() {
 function toggleSignals() {
     const list = document.getElementById('signals-list');
     const chevron = document.getElementById('signals-chevron');
+    const isHidden = list.classList.contains('hidden');
+    list.classList.toggle('hidden', !isHidden);
+    chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+}
+
+// ── Briefing History ──────────────────────────────────────────────────────
+
+async function fetchHistory() {
+    try {
+        const r = await fetch('/api/briefing/history');
+        const data = await r.json();
+        if (!data.length) return;
+
+        const list = document.getElementById('history-list');
+        list.innerHTML = '';
+
+        data.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'signal-item';
+            const d = new Date(item.date + 'T00:00:00');
+            const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+            const count = Array.isArray(item.signals) ? item.signals.length : 0;
+            div.innerHTML = `
+                <div class="signal-header">
+                    <span class="signal-source" style="background:rgba(124,106,247,0.15);color:#7c6af7">${label}</span>
+                    <span class="signal-score">${count} signals</span>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    } catch (e) { }
+}
+
+function toggleHistory() {
+    const list = document.getElementById('history-list');
+    const chevron = document.getElementById('history-chevron');
     const isHidden = list.classList.contains('hidden');
     list.classList.toggle('hidden', !isHidden);
     chevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';

@@ -141,24 +141,32 @@ def call_groq(system_prompt: str, context: str, max_tokens: int = 200) -> str:
 
 
 async def generate_briefing(signals: list[ScoredSignal]) -> dict:
-    # Build persona and prompts fresh at call time — not at import time
-    persona  = build_persona()
+    persona      = build_persona()
+    mood         = detect_mood(signals)
 
-    # LEARN: We fetch yesterday's memory here and inject it into the persona.
-    # This is what makes SAGE feel like it actually knows you over time.
-    # The memory module reads the DB — that's why it's async.
+    # Mood adjusts the tone instruction
+    # LEARN: Same data, different framing based on context.
+    # This is exactly what good human communicators do too.
+    mood_instruction = {
+        "stressful": "Today is high-stress. Be warmer, more supportive, and prioritise what matters most. Acknowledge the pressure she's under.",
+        "busy":      "Today is busy. Be direct and efficient. Help her focus on the top 3 things.",
+        "calm":      "Today is calm. Be analytical and forward-looking. Use this as a planning opportunity.",
+    }[mood]
+
     from brain.memory import get_yesterday_context, format_memory_context
-    memory_ctx     = await get_yesterday_context()
-    memory_summary = format_memory_context(memory_ctx)
-    persona_with_memory = persona + f"\n\nMEMORY FROM YESTERDAY:\n{memory_summary}"
+    memory_ctx          = await get_yesterday_context()
+    memory_summary      = format_memory_context(memory_ctx)
+    persona_with_memory = (
+        persona
+        + f"\n\nMOOD TODAY: {mood.upper()}. {mood_instruction}"
+        + f"\n\nMEMORY FROM YESTERDAY:\n{memory_summary}"
+    )
 
     prompts  = build_prompts(persona_with_memory)
     context  = build_signal_context(signals)
     date_str = datetime.now(timezone.utc).strftime("%A, %d %B %Y")
 
     loop = asyncio.get_event_loop()
-
-    # Run all 5 Groq calls concurrently — faster than sequential
     hook, situation, actions, financial, close = await asyncio.gather(
         loop.run_in_executor(None, call_groq, prompts["hook"],      context, 80),
         loop.run_in_executor(None, call_groq, prompts["situation"], context, 200),
@@ -175,6 +183,7 @@ async def generate_briefing(signals: list[ScoredSignal]) -> dict:
         "financial":    financial,
         "close":        close,
         "signal_count": len(signals),
+        "mood":         mood,
     }
 
 
