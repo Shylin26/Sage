@@ -201,7 +201,8 @@ async def api_streak(auth=Depends(require_auth)):
 
 
 # ── Exams ──────────────────────────────────────────────────────────────────
-    @app.get("/api/exams")
+
+@app.get("/api/exams")
 async def api_exams(auth=Depends(require_auth)):
     from datetime import date
     try:
