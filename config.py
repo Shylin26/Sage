@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     lon:                    float = 76.5212
     city:                   str = "Hamirpur"
     db_path:                str = "data/sage.db"
+    dashboard_pin:          str = "sage2026"  # override in .env
 
     class Config:
         env_file = ".env"

@@ -10,9 +10,11 @@ from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
 from pydantic import BaseModel
 
 from config import get_settings
@@ -21,6 +23,27 @@ from run_briefing import run as run_pipeline, run_morning_briefing, run_weekly_r
 
 settings  = get_settings()
 scheduler = AsyncIOScheduler()
+security  = HTTPBasic()
+
+
+def require_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    """
+    LEARN: Depends() is FastAPI's dependency injection.
+    Any route that has this as a parameter will require auth.
+    secrets.compare_digest() prevents timing attacks — it takes
+    the same time whether the password is right or wrong, so
+    attackers can't guess by measuring response time.
+    """
+    correct = secrets.compare_digest(
+        credentials.password.encode(),
+        settings.dashboard_pin.encode()
+    )
+    if not correct:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid PIN",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 @asynccontextmanager
@@ -64,14 +87,14 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 # ── Pages ──────────────────────────────────────────────────────────────────
 
 @app.get("/")
-async def dashboard():
+async def dashboard(auth=Depends(require_auth)):
     return FileResponse("frontend/index.html")
 
 
 # ── Briefing ───────────────────────────────────────────────────────────────
 
 @app.get("/api/briefing/latest")
-async def api_latest():
+async def api_latest(auth=Depends(require_auth)):
     return await get_latest_briefing() or {"error": "No briefing found"}
 
 
@@ -87,7 +110,7 @@ async def api_history():
 
 
 @app.post("/api/briefing/run")
-async def api_run():
+async def api_run(auth=Depends(require_auth)):
     asyncio.create_task(run_pipeline())
     return {"status": "pipeline started", "time": datetime.now(timezone.utc).isoformat()}
 
@@ -105,7 +128,7 @@ async def api_weekly():
 
 
 @app.get("/api/briefing/audio")
-async def api_audio():
+async def api_audio(auth=Depends(require_auth)):
     # Try file first, fall back to DB
     # LEARN: We store audio as base64 in SQLite so it survives
     # container restarts on Railway (no persistent volume needed)
@@ -154,7 +177,7 @@ async def api_signals():
 # and which modules passed or failed — without reading any logs.
 
 @app.get("/api/status")
-async def api_status():
+async def api_status(auth=Depends(require_auth)):
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
@@ -193,7 +216,7 @@ class TaskUpdate(BaseModel):
 
 
 @app.get("/api/tasks")
-async def api_get_tasks():
+async def api_get_tasks(auth=Depends(require_auth)):
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
@@ -204,7 +227,7 @@ async def api_get_tasks():
 
 
 @app.post("/api/tasks")
-async def api_create_task(payload: TaskPayload):
+async def api_create_task(payload: TaskPayload, auth=Depends(require_auth)):
     async with aiosqlite.connect(settings.db_path) as db:
         cursor = await db.execute(
             "INSERT INTO tasks (title, due_date, subject, priority) VALUES (?, ?, ?, ?)",
@@ -216,7 +239,7 @@ async def api_create_task(payload: TaskPayload):
 
 
 @app.patch("/api/tasks/{task_id}")
-async def api_update_task(task_id: int, payload: TaskUpdate):
+async def api_update_task(task_id: int, payload: TaskUpdate, auth=Depends(require_auth)):
     fields, values = [], []
     if payload.done     is not None: fields.append("done = ?");     values.append(int(payload.done))
     if payload.title    is not None: fields.append("title = ?");    values.append(payload.title)
@@ -232,7 +255,7 @@ async def api_update_task(task_id: int, payload: TaskUpdate):
 
 
 @app.delete("/api/tasks/{task_id}")
-async def api_delete_task(task_id: int):
+async def api_delete_task(task_id: int, auth=Depends(require_auth)):
     async with aiosqlite.connect(settings.db_path) as db:
         await db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         await db.commit()
