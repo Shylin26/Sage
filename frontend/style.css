@@ -579,3 +579,54 @@ body {
         gap: 0.75rem;
     }
 }
+
+/* Exam Countdown */
+.exam-countdown {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.exam-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    flex: 1;
+    min-width: 180px;
+}
+
+.exam-days {
+    font-size: 1.8rem;
+    font-weight: 700;
+    line-height: 1;
+    min-width: 2.5rem;
+    text-align: center;
+}
+
+.exam-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    flex: 1;
+}
+
+.exam-subject {
+    font-size: 0.8rem;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.exam-code {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+}
+
+.exam-urgency {
+    font-size: 1rem;
+}

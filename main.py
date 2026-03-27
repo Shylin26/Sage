@@ -194,6 +194,31 @@ async def api_status():
     }
 
 
+@app.get("/api/exams")
+async def api_exams(auth=Depends(require_auth)):
+    """Returns exam countdown data from profile.json"""
+    from datetime import date
+    try:
+        with open("data/profile.json") as f:
+            profile = json.load(f)
+    except Exception:
+        return []
+
+    today = date.today()
+    result = []
+    for ex in profile.get("exams", []):
+        exam_date = date.fromisoformat(ex["date"])
+        days_left = (exam_date - today).days
+        if days_left >= 0:
+            result.append({
+                "subject":   ex["subject"],
+                "code":      ex["code"],
+                "date":      ex["date"],
+                "days_left": days_left,
+            })
+    return sorted(result, key=lambda x: x["days_left"])
+
+
 # ── Tasks ──────────────────────────────────────────────────────────────────
 # LEARN: This is a full CRUD API for tasks.
 # GET    /api/tasks        → list all pending tasks

@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchStatus();
     fetchSignals();
     fetchTasks();
+    fetchExams();
 });
 
 // ── Briefing ──────────────────────────────────────────────────────────────
@@ -163,6 +164,44 @@ function toggleAudio() {
         pauseIcon.classList.add('hidden');
         label.textContent = 'Listen to Briefing';
     };
+}
+
+// ── Exam Countdown ────────────────────────────────────────────────────────
+// LEARN: We fetch exam data from /api/exams and render a row of cards.
+// Color changes based on days left — green > 14 days, yellow 7-14, red < 7.
+// This is pure frontend logic — no backend changes needed per render.
+
+async function fetchExams() {
+    try {
+        const r = await fetch('/api/exams');
+        const exams = await r.json();
+        if (!exams.length) return;
+
+        const container = document.getElementById('exam-countdown');
+        container.innerHTML = '';
+
+        exams.forEach(ex => {
+            const d = ex.days_left;
+            const color = d <= 7 ? '#f87171' : d <= 14 ? '#fbbf24' : '#4ade80';
+            const urgency = d <= 3 ? '🔴' : d <= 7 ? '🟡' : '🟢';
+
+            const card = document.createElement('div');
+            card.className = 'exam-card';
+            card.innerHTML = `
+                <div class="exam-days" style="color:${color}">${d}</div>
+                <div class="exam-info">
+                    <span class="exam-subject">${ex.subject}</span>
+                    <span class="exam-code">${ex.code} · ${new Date(ex.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                </div>
+                <span class="exam-urgency">${urgency}</span>
+            `;
+            container.appendChild(card);
+        });
+
+        container.classList.remove('hidden');
+    } catch (e) {
+        console.error('Exams fetch failed', e);
+    }
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────
