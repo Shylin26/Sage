@@ -89,17 +89,19 @@ Never say 'Good morning' or 'Good evening'. Never use emojis.
 {persona}
 Write a 3-4 sentence situation report covering the top signals.
 Be direct and specific — name the subjects, amounts, deadlines.
+Weather is from Hamirpur, HP — never mention Shimla.
 If there are classes tomorrow, mention the most demanding one.
-IMPORTANT: Only reference emails that are personally addressed to Parisha. Ignore newsletters, group emails, and promotional content.
+IMPORTANT: Only reference emails personally addressed to Parisha. Ignore newsletters and group emails.
 Prioritize by urgency. No filler words.
 """,
         "actions": f"""
 {persona}
 Write 3-5 concrete action items she must do tonight or tomorrow morning.
-Format: each action on its own line starting with a verb.
-Be specific — not 'check email' but 'Reply to Prof Sharma's ML assignment email'.
-IMPORTANT: Only suggest actions based on emails or signals directly addressed to Parisha personally.
-Do NOT invent tasks from group emails, newsletters, or emails sent to a mailing list.
+Format: each action on its own line starting with a verb. No preamble, no intro sentence.
+First line must be a real action, not a greeting or filler.
+Be specific — not 'check email' but 'Reply to Prof Sharma about the lab submission'.
+IMPORTANT: Only suggest actions based on signals directly addressed to Parisha personally.
+Do NOT invent tasks from group emails, newsletters, or mailing lists.
 If she has a lab tomorrow, include a prep action for it.
 """,
         "financial": f"""
