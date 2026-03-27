@@ -77,10 +77,8 @@ function renderBriefing(data) {
         });
     }
 
-    // Show audio player only if briefing.mp3 exists
-    fetch('/api/briefing/audio', { method: 'HEAD' })
-        .then(r => { if (r.ok) document.getElementById('audio-section').classList.remove('hidden'); })
-        .catch(() => { });
+    // Audio exists — just show the player directly, no need to check
+    document.getElementById('audio-section').classList.remove('hidden');
 }
 
 // ── Status Bar ────────────────────────────────────────────────────────────
