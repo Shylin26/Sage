@@ -10,14 +10,19 @@ async def init_db():
     schema = Path("db/schema.sql").read_text()
     async with aiosqlite.connect(settings.db_path) as db:
         await db.executescript(schema)
-        # Add audio_b64 column if it doesn't exist (migration for existing DBs)
-        try:
-            await db.execute("ALTER TABLE briefings ADD COLUMN audio_b64 TEXT DEFAULT ''")
-            await db.commit()
-            print("✓ Migrated: added audio_b64 column")
-        except Exception:
-            pass  # Column already exists, that's fine
-        await db.commit()
+
+        # Migrations — ALTER TABLE is safe to run every time,
+        # the except just catches "column already exists" errors
+        migrations = [
+            "ALTER TABLE briefings ADD COLUMN audio_b64 TEXT DEFAULT ''",
+        ]
+        for migration in migrations:
+            try:
+                await db.execute(migration)
+                await db.commit()
+            except Exception:
+                pass  # already applied
+
     print("✓ Database ready")
 
 if __name__ == "__main__":
