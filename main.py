@@ -177,7 +177,7 @@ async def api_signals():
 # and which modules passed or failed — without reading any logs.
 
 @app.get("/api/status")
-async def api_status(auth=Depends(require_auth)):
+async def api_status():
     async with aiosqlite.connect(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
