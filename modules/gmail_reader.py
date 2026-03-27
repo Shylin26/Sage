@@ -29,10 +29,10 @@ SENDER_WEIGHT = {
 }
 
 URGENCY_KEYWORDS = {
-    5: ["urgent", "deadline today", "final warning", "fraud", "suspended", "immediate"],
-    4: ["due tomorrow", "submission", "interview", "offer letter", "payment failed", "exam"],
-    3: ["reminder", "due this week", "please respond", "meeting", "assignment"],
-    2: ["fyi", "heads up", "when you get a chance"],
+    5: ["urgent", "deadline today", "final warning", "fraud", "suspended", "immediate action"],
+    4: ["due tomorrow", "your submission", "interview confirmed", "offer letter", "payment failed"],
+    3: ["reminder", "please respond", "your meeting", "your assignment", "action required"],
+    2: ["fyi", "heads up", "when you get a chance", "newsletter", "digest"],
 }
 
 class GmailReader:

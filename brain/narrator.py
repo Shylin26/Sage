@@ -41,7 +41,6 @@ def build_persona() -> str:
 
     schedule = p.get("class_schedule", {})
     if schedule:
-        # Briefing is at 6 PM — show tomorrow's classes so she can prepare tonight
         tomorrow     = datetime.now(timezone.utc) + timedelta(days=1)
         tomorrow_key = tomorrow.strftime("%A").lower()
         classes      = schedule.get(tomorrow_key, [])
@@ -52,6 +51,29 @@ def build_persona() -> str:
             persona += f" Tomorrow ({tomorrow.strftime('%A')}) she has no classes — free day."
 
     return persona
+
+
+def detect_mood(signals: list) -> str:
+    """
+    LEARN: Mood detection based on signal urgency scores.
+    We take the average URR score of all signals and classify
+    the day. This changes the narrator's tone automatically —
+    high stress day = more supportive, calm day = more analytical.
+
+    This is a simple rule-based classifier. In production systems
+    you'd use an ML model, but rules work well for known categories.
+    """
+    if not signals:
+        return "calm"
+    avg_urgency = sum(s.urr_score for s in signals) / len(signals)
+    high_urgency_count = sum(1 for s in signals if s.urr_score > 0.7)
+
+    if avg_urgency > 0.65 or high_urgency_count >= 3:
+        return "stressful"
+    elif avg_urgency > 0.4 or high_urgency_count >= 1:
+        return "busy"
+    else:
+        return "calm"
 
 
 def build_prompts(persona: str) -> dict:
@@ -68,6 +90,7 @@ Never say 'Good morning' or 'Good evening'. Never use emojis.
 Write a 3-4 sentence situation report covering the top signals.
 Be direct and specific — name the subjects, amounts, deadlines.
 If there are classes tomorrow, mention the most demanding one.
+IMPORTANT: Only reference emails that are personally addressed to Parisha. Ignore newsletters, group emails, and promotional content.
 Prioritize by urgency. No filler words.
 """,
         "actions": f"""
@@ -75,6 +98,8 @@ Prioritize by urgency. No filler words.
 Write 3-5 concrete action items she must do tonight or tomorrow morning.
 Format: each action on its own line starting with a verb.
 Be specific — not 'check email' but 'Reply to Prof Sharma's ML assignment email'.
+IMPORTANT: Only suggest actions based on emails or signals directly addressed to Parisha personally.
+Do NOT invent tasks from group emails, newsletters, or emails sent to a mailing list.
 If she has a lab tomorrow, include a prep action for it.
 """,
         "financial": f"""
@@ -118,7 +143,16 @@ def call_groq(system_prompt: str, context: str, max_tokens: int = 200) -> str:
 async def generate_briefing(signals: list[ScoredSignal]) -> dict:
     # Build persona and prompts fresh at call time — not at import time
     persona  = build_persona()
-    prompts  = build_prompts(persona)
+
+    # LEARN: We fetch yesterday's memory here and inject it into the persona.
+    # This is what makes SAGE feel like it actually knows you over time.
+    # The memory module reads the DB — that's why it's async.
+    from brain.memory import get_yesterday_context, format_memory_context
+    memory_ctx     = await get_yesterday_context()
+    memory_summary = format_memory_context(memory_ctx)
+    persona_with_memory = persona + f"\n\nMEMORY FROM YESTERDAY:\n{memory_summary}"
+
+    prompts  = build_prompts(persona_with_memory)
     context  = build_signal_context(signals)
     date_str = datetime.now(timezone.utc).strftime("%A, %d %B %Y")
 

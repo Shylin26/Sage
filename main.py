@@ -28,10 +28,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     scheduler.add_job(
         run_pipeline,
-        CronTrigger(hour=18, minute=0),
+        CronTrigger(hour=12, minute=30, timezone="UTC"),  # 6:00 PM IST = 12:30 UTC
         id="evening_briefing",
         replace_existing=True,
     )
+    print("SAGE scheduler started — briefing runs at 18:00 IST daily")
     scheduler.start()
     print("SAGE scheduler started — briefing runs at 18:00 daily")
     yield
