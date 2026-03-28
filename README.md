@@ -296,12 +296,4 @@ Linear decay would treat a 1-hour-old signal and a 7-hour-old signal as proporti
 
 No tutorials. No boilerplate. Designed the architecture, wrote every module, and iterated through real daily use.
 
-Built as a 2nd year B.Tech CS student at NIT Hamirpur.
-
----
-
-<div align="center">
-
-*If you're reading this as a recruiter or interviewer — I'm happy to walk through any part of the codebase, explain the scoring model, or discuss the design decisions in detail.*
-
-</div>
+Built as a 2nd year B.Tech CS student at NIT Hamirpur.</div>
