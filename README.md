@@ -1,127 +1,174 @@
-# SAGE — Personal AI Briefing Agent
+<div align="center">
 
-> A fully autonomous personal intelligence system that collects signals from your digital life, scores them by urgency, and delivers a personalised daily briefing via WhatsApp and voice — every day at 6 PM.
+# SAGE
+### Personal AI Briefing Agent
 
-**Live:** [sage-production-d82c.up.railway.app](https://sage-production-d82c.up.railway.app)
+*Every evening at 6 PM, SAGE reads your emails, calendar, weather, bank transactions, and pending tasks — scores them by urgency, generates a personalised narrative briefing using an LLM, and delivers it to your WhatsApp and as a voice audio.*
+
+**No app switching. No notification overload. Just one briefing.**
+
+[![Live Demo](https://img.shields.io/badge/Live-sage--production--d82c.up.railway.app-7c6af7?style=flat-square)](https://sage-production-d82c.up.railway.app)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat-square)](https://fastapi.tiangolo.com)
+[![Deployed on Railway](https://img.shields.io/badge/Deployed-Railway-0B0D0E?style=flat-square)](https://railway.app)
+
+</div>
 
 ---
 
-## What is SAGE?
+## The Problem
 
-SAGE (Signal Aggregation and Guided Execution) is a personal AI agent I built to replace the mental overhead of checking multiple apps every day. Instead of manually scanning Gmail, weather, calendar, and bank notifications — SAGE collects everything, scores it by urgency using a custom algorithm, generates a narrative briefing using an LLM, and delivers it as a WhatsApp message and voice audio every evening.
+I was spending 20–30 minutes every morning checking Gmail, Google Calendar, weather apps, and bank notifications — context-switching between 5 different apps just to understand what my day looked like.
 
-It runs 24/7 on a cloud server. I don't touch it. It just works.
+I built SAGE to solve this. One briefing. Every evening. Everything that matters.
 
 ---
 
-## Architecture
+## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Signal Sources                       │
-│  Gmail  │  Google Calendar  │  Weather API  │  Bank SMS  │
-└────────────────────┬────────────────────────────────────┘
-                     │ RawSignal objects
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Scoring Engine                        │
-│         URR Score = Urgency × Relevance × Recency        │
-│    Exponential decay · Learned weights from feedback     │
-└────────────────────┬────────────────────────────────────┘
-                     │ ScoredSignal objects (ranked)
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                  Narrator (Groq LLM)                     │
-│   Mood detection · Context memory · Persona injection    │
-│   5 concurrent Groq calls → hook/situation/actions/...   │
-└────────────────────┬────────────────────────────────────┘
-                     │ Structured briefing dict
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│                     Delivery Layer                       │
-│        WhatsApp (Twilio)  │  Voice MP3 (ElevenLabs)      │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        SIGNAL SOURCES                            │
+│                                                                  │
+│   Gmail API    Google Calendar    OpenWeatherMap    Bank SMS     │
+│   (OAuth2)       (OAuth2)          (REST API)      (Webhook)    │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │  RawSignal objects
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                      SCORING ENGINE                              │
+│                                                                  │
+│         URR Score  =  Urgency  ×  Relevance  ×  Recency         │
+│                                                                  │
+│   • Urgency    — keyword + sender weight analysis                │
+│   • Relevance  — learned from user feedback over time           │
+│   • Recency    — exponential decay (λ = ln2 / half-life)        │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │  ScoredSignal objects (ranked, noise filtered)
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    NARRATOR  (Groq LLM)                          │
+│                                                                  │
+│   Mood Detection → Context Memory → Persona Injection           │
+│   5 concurrent LLM calls via asyncio.gather()                   │
+│   hook / situation / actions / financial / close                │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │  Structured briefing
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                      DELIVERY LAYER                              │
+│                                                                  │
+│        WhatsApp (Twilio)          Voice MP3 (ElevenLabs)        │
+│        Morning 8 AM IST           Evening 6 PM IST              │
+│        Weekly Sunday Review       Dashboard (FastAPI)           │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Features
 
-### Signal Collection
-- **Gmail** — reads emails from the last 16 hours, classifies senders (faculty, bank, internship, peer, promotion), scores urgency using keyword matching
-- **Google Calendar** — fetches today's events and converts them to signals
-- **Weather** — OpenWeatherMap API with commute risk and clothing advice for Hamirpur, HP
-- **Bank SMS** — regex-based parser that extracts transaction amounts, balances, and channels (UPI/NEFT/ATM) from SMS forwarded via webhook
-- **Tasks** — pending tasks with deadlines become signals; urgency increases as due date approaches
-- **Exam countdown** — reads exam schedule from profile, generates high-urgency signals as exams approach
+### Intelligence Layer
 
-### Scoring Engine (`brain/scorer.py`)
-Custom URR (Urgency × Relevance × Recency) scoring model:
+**URR Scoring Model**
+Every signal gets a composite score before the LLM ever sees it. Signals below the noise floor (URR < 0.08) are discarded entirely.
 
 ```python
-# Exponential decay — same math as radioactive decay
-recency = e^(-λt)  where λ = ln(2) / half_life_per_source
+# Exponential decay — same mathematics as radioactive decay
+recency = e^(-λt)    where λ = ln(2) / half_life_per_source
 
-# Relevance learned from feedback history
+# Source-specific half-lives
+DECAY_HALFLIFE_HOURS = {
+    SignalSource.BANK_SMS:  3.0,   # financial alerts decay fast
+    SignalSource.WEATHER:   4.0,
+    SignalSource.ACADEMIC:  6.0,
+    SignalSource.GMAIL:     8.0,
+}
+
+# Relevance drifts toward what you actually act on
 if feedback_count >= 5:
-    learned_relevance = 0.3 * base + 0.7 * act_rate
+    learned_relevance = 0.3 * base_weight + 0.7 * historical_act_rate
 ```
 
-- Each signal source has a different decay half-life (bank SMS: 3h, weather: 4h, Gmail: 8h)
-- Relevance weights drift toward what the user actually acts on over time
-- Signals below URR threshold 0.08 are filtered as noise
+**Mood Detection**
+Before generating the briefing, SAGE classifies the day based on signal urgency distribution:
+- 🔴 **Stressful** — avg URR > 0.65 or 3+ high-urgency signals → warmer, more supportive tone
+- 🟡 **Busy** — moderate urgency → direct and efficient
+- 🟢 **Calm** — low urgency → analytical and forward-looking
 
-### Narrator (`brain/narrator.py`)
-- Powered by **Groq (LLaMA 3.3 70B)**
-- 5 sections generated concurrently via `asyncio.gather()` — hook, situation, actions, financial, close
-- **Mood detection** — classifies the day as calm/busy/stressful based on signal urgency distribution, adjusts tone automatically
-- **Context memory** — reads yesterday's briefing from DB, injects it into the prompt so SAGE can reference what it told you before
-- **Study streak tracking** — counts consecutive days of task completion, calls you out or celebrates you
+**Context Memory**
+SAGE reads yesterday's briefing from the database and injects it into today's prompt. It knows what it told you before. It tracks whether you acted on it.
+
+**Study Streak Tracking**
+Counts consecutive days of task completion using the same algorithm as Duolingo. Calls you out if you've been slacking. Acknowledges streaks.
+
+---
+
+### Signal Sources
+
+| Source | What it collects | Urgency logic |
+|--------|-----------------|---------------|
+| Gmail | Emails from last 16h, classified by sender type | Keyword matching + sender weight |
+| Google Calendar | Today's events with times | Always high urgency |
+| Weather | Temp, rain probability, commute risk, clothing advice | Rain > 60% or wind > 40km/h → high |
+| Bank SMS | Transaction amount, balance, channel (UPI/NEFT/ATM) | Balance < ₹500 → critical |
+| Tasks | Pending tasks with deadlines | Overdue = 0.98, due tomorrow = 0.90 |
+| Exams | Countdown from profile | < 7 days = 0.88, < 3 days = 0.98 |
+
+---
 
 ### Delivery
-- **WhatsApp** via Twilio — formatted with bold headers and bullet points, auto-splits messages over 1500 chars
-- **Voice** via ElevenLabs TTS (falls back to gTTS Indian English accent)
-- **Morning briefing** at 8 AM IST — lightweight WhatsApp with today's schedule, weather, exam countdown
-- **Evening briefing** at 6 PM IST — full narrative briefing + voice MP3
-- **Weekly review** every Sunday — task completion rate, signals acted on, streak summary
+
+**Evening Briefing (6 PM IST)**
+Full narrative with hook, situation report, action items, financial pulse, and closing line. Delivered as WhatsApp message + voice MP3.
+
+**Morning Briefing (8 AM IST)**
+Lightweight WhatsApp — today's class schedule, weather, exam countdown. No LLM, no latency.
+
+**Weekly Review (Sunday 7 PM IST)**
+Performance summary — briefings delivered, tasks completed, signals acted on, streak status.
+
+**WhatsApp Commands**
+Reply to SAGE directly:
+```
+status                          → list pending tasks
+done 2                          → mark task #2 complete
+add task: revise OS by friday   → create a task with deadline
+help                            → show all commands
+```
+
+---
 
 ### Dashboard
-- Dark-themed web UI served by FastAPI
-- PIN-protected (HTTP Basic Auth)
-- Exam countdown widget with color-coded urgency
-- Task manager with add/complete/delete
-- Raw signals panel — see exactly what SAGE collected and why
+
+PIN-protected web interface served by FastAPI:
+
+- Exam countdown cards with color-coded urgency (green → yellow → red)
+- Task manager — add, complete, delete tasks
+- Raw signals panel — see every signal SAGE collected, its source, URR score, and timestamp
 - Briefing history — last 7 days
-- Mood badge — shows day classification
+- Mood badge — today's day classification
 - Study streak badge
 - Profile editor — edit goals, tone, exam dates from the UI
 - Audio player for voice briefing
-- One-click pipeline trigger
-
-### WhatsApp Commands
-Reply to SAGE on WhatsApp:
-```
-status          → list pending tasks
-done 2          → mark task #2 complete
-add task: <title> by <day>  → create a task
-help            → show all commands
-```
+- System health bar — green/red dots per module, last run time
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Python 3.11, FastAPI, APScheduler |
-| LLM | Groq API (LLaMA 3.3 70B) |
-| Database | SQLite via aiosqlite (async) |
-| Voice | ElevenLabs TTS / gTTS fallback |
-| Messaging | Twilio WhatsApp API |
-| Email/Calendar | Google Gmail + Calendar API (OAuth2) |
-| Weather | OpenWeatherMap API |
-| Frontend | Vanilla JS, CSS custom properties |
-| Deployment | Docker, Railway |
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| Backend | Python 3.11, FastAPI | Async-native, fast, clean API design |
+| LLM | Groq (LLaMA 3.3 70B) | Fastest inference, free tier |
+| Scheduler | APScheduler | Cron-style jobs inside the FastAPI process |
+| Database | SQLite + aiosqlite | Zero-config, async, sufficient for personal use |
+| Voice | ElevenLabs / gTTS fallback | High quality with automatic fallback |
+| Messaging | Twilio WhatsApp API | Reliable delivery, webhook support |
+| Email/Calendar | Google APIs (OAuth2) | Official, reliable |
+| Weather | OpenWeatherMap | Free tier, accurate |
+| Frontend | Vanilla JS + CSS | No framework overhead, full control |
+| Deployment | Docker + Railway | One-command deploy, auto-redeploy on push |
 
 ---
 
@@ -129,43 +176,40 @@ help            → show all commands
 
 ```
 sage/
-├── main.py                 # FastAPI app, scheduler, all API routes
-├── run_briefing.py         # Pipeline orchestration
-├── config.py               # Pydantic settings
+├── main.py                  # FastAPI app + all API routes + scheduler
+├── run_briefing.py          # Pipeline orchestration (evening + morning + weekly)
+├── config.py                # Pydantic settings from .env
 │
-├── modules/                # Signal collectors
-│   ├── gmail_reader.py
-│   ├── calendar_reader.py
-│   ├── weather.py
-│   ├── bank_sms.py         # Regex SMS parser
-│   └── whatsapp.py
+├── brain/
+│   ├── scorer.py            # URR model, exponential decay, feedback learning
+│   ├── narrator.py          # LLM briefing generation, mood detection
+│   └── memory.py            # Episodic memory, streak tracking
 │
-├── brain/                  # Intelligence layer
-│   ├── scorer.py           # URR scoring + exponential decay
-│   ├── narrator.py         # LLM briefing generation
-│   ├── memory.py           # Episodic memory + streak tracking
-│   └── correlator.py
+├── modules/                 # Signal collectors
+│   ├── gmail_reader.py      # Gmail OAuth2, sender classification
+│   ├── calendar_reader.py   # Google Calendar events
+│   ├── weather.py           # OpenWeatherMap + impact analysis
+│   └── bank_sms.py          # Regex SMS parser (amount, balance, channel)
 │
 ├── delivery/
-│   ├── voice.py            # ElevenLabs + gTTS
-│   └── whatsapp_sender.py
+│   ├── voice.py             # ElevenLabs TTS + gTTS Indian English fallback
+│   └── whatsapp_sender.py   # Twilio, WhatsApp markdown formatting
 │
 ├── models/
-│   ├── signals.py          # RawSignal, ScoredSignal dataclasses
-│   └── briefing.py
+│   └── signals.py           # RawSignal, ScoredSignal dataclasses
 │
 ├── db/
-│   ├── database.py         # init + migrations
-│   └── schema.sql
+│   ├── database.py          # init_db + safe migrations
+│   └── schema.sql           # signals, briefings, tasks, feedback, pipeline_runs
 │
-├── frontend/               # Dashboard UI
+├── frontend/
 │   ├── index.html
-│   ├── app.js
-│   └── style.css
+│   ├── app.js               # Fetch, render, CRUD, audio player
+│   └── style.css            # Dark theme, CSS custom properties
 │
 └── data/
-    ├── profile.json        # Personal config (name, schedule, exams, goals)
-    └── sage.db             # SQLite database
+    ├── profile.json         # Name, schedule, exams, goals, tone
+    └── sage.db              # SQLite database
 ```
 
 ---
@@ -173,11 +217,11 @@ sage/
 ## Database Schema
 
 ```sql
-signals         -- all collected signals with URR scores
-briefings       -- generated briefings + audio (base64)
-signal_feedback -- thumbs up/down per signal (feeds scorer)
-pipeline_runs   -- health tracking per run
-tasks           -- personal task manager
+signals          -- every collected signal with URR scores and metadata
+briefings        -- generated briefings + base64 audio (survives restarts)
+signal_feedback  -- thumbs up/down per signal (feeds the scorer)
+pipeline_runs    -- health tracking: status, duration, per-module results
+tasks            -- personal task manager with priorities and due dates
 ```
 
 ---
@@ -187,50 +231,77 @@ tasks           -- personal task manager
 ```bash
 git clone https://github.com/yourusername/sage
 cd sage
+
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # fill in your API keys
-python run_briefing.py  # run pipeline once
-uvicorn main:app --reload  # start server
+
+cp .env.example .env
+# Fill in your API keys
+
+python -m db.database          # initialise database
+python run_briefing.py         # run pipeline once
+uvicorn main:app --reload      # start server → localhost:8000
 ```
 
-**Required API keys:**
-- `GROQ_API_KEY` — [console.groq.com](https://console.groq.com)
-- `OPENWEATHER_API_KEY` — [openweathermap.org](https://openweathermap.org/api)
-- `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` — [twilio.com](https://twilio.com)
-- `ELEVENLABS_API_KEY` — [elevenlabs.io](https://elevenlabs.io)
-- Google OAuth credentials — [console.cloud.google.com](https://console.cloud.google.com)
+**Required environment variables:**
+
+```env
+GROQ_API_KEY=
+OPENWEATHER_API_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_WHATSAPP_FROM=
+ELEVENLABS_API_KEY=
+YOUR_WHATSAPP_NUMBER=
+DASHBOARD_PIN=
+LAT=
+LON=
+CITY=
+```
 
 ---
 
-## Deployment (Railway)
+## Deployment
 
 ```bash
-git push origin main  # Railway auto-deploys on push
+git push origin main   # Railway auto-deploys on every push
 ```
 
-Set environment variables in Railway dashboard. For Gmail OAuth tokens:
+Gmail OAuth tokens are base64-encoded and stored as environment variables — no files committed to git.
+
 ```bash
-base64 -i data/token.json | tr -d '\n'       # → GMAIL_TOKEN_B64
-base64 -i data/credentials.json | tr -d '\n' # → CREDENTIALS_B64
+base64 -i data/token.json | tr -d '\n'        # → GMAIL_TOKEN_B64
+base64 -i data/credentials.json | tr -d '\n'  # → CREDENTIALS_B64
 ```
 
 ---
 
-## What I Learned Building This
+## Engineering Decisions Worth Noting
 
-- **Async Python** — entire pipeline is async with `asyncio.gather()` for concurrent LLM calls
-- **Signal processing** — designing a scoring model with exponential decay and learned weights
-- **LLM prompt engineering** — mood-aware prompts, persona injection, memory context
-- **OAuth2 flow** — Google API authentication with token refresh
-- **Webhook patterns** — receiving real-time data from Twilio and SMS forwarder
-- **Production deployment** — Docker, Railway, environment variable management, health checks
-- **SQLite migrations** — safe schema evolution on a live database
+**Why SQLite and not Postgres?**
+This is a single-user personal tool. SQLite with aiosqlite gives full async support with zero infrastructure overhead. The entire database is one file.
+
+**Why store audio as base64 in SQLite?**
+Railway's free tier has ephemeral storage — files disappear on restart. Storing the MP3 as base64 in the database means voice briefings survive container restarts without needing a persistent volume.
+
+**Why 5 concurrent LLM calls instead of one?**
+Each briefing section (hook, situation, actions, financial, close) has a different system prompt and token budget. Running them concurrently with `asyncio.gather()` cuts generation time from ~15s to ~5s.
+
+**Why exponential decay for recency?**
+Linear decay would treat a 1-hour-old signal and a 7-hour-old signal as proportionally different. Exponential decay models the real-world intuition that very recent signals are much more valuable, and the value drops off sharply — same mathematics as radioactive decay and memory forgetting curves.
 
 ---
 
-## Author
+## What I Built This With
 
-**Parisha** — B.Tech CS, NIT Hamirpur (2nd Year)
+No tutorials. No boilerplate. Designed the architecture, wrote every module, and iterated through real daily use.
 
-Built entirely from scratch as a personal productivity tool. Every module, scoring algorithm, and prompt was designed and iterated on through real daily use.
+Built as a 2nd year B.Tech CS student at NIT Hamirpur.
+
+---
+
+<div align="center">
+
+*If you're reading this as a recruiter or interviewer — I'm happy to walk through any part of the codebase, explain the scoring model, or discuss the design decisions in detail.*
+
+</div>
